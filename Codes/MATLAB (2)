@@ -1,0 +1,232 @@
+clc;
+clear;
+
+% ==========================================
+% SPARTAN ROBOKIT
+% SMOOTH SIMULATION + OPTIONAL HARDWARE
+% ==========================================
+
+startup_rvc
+
+% ==========================================
+% ROBOT LINK LENGTHS (mm)
+% ==========================================
+a1 = 110;
+a2 = 115;
+a3 = 120;
+
+% ==========================================
+% DH PARAMETERS
+% ==========================================
+H0_1 = Link([0 a1 0 deg2rad(270) 0 0]);
+H1_2 = Link([0 0 a2 pi 0 deg2rad(270)]);
+H2_3 = Link([0 0 a3 0 0 deg2rad(270)]);
+
+robot = SerialLink([H0_1 H1_2 H2_3], ...
+    'name','Spartan Robokit');
+
+% ==========================================
+% SELECT MODE
+% ==========================================
+fprintf('\n');
+fprintf('====================================\n');
+fprintf('SPARTAN ROBOKIT CONTROL MODE\n');
+fprintf('====================================\n');
+fprintf('1 = Simulation Only\n');
+fprintf('2 = Simulation + Arduino Hardware\n');
+fprintf('====================================\n');
+
+mode = input('Enter mode: ');
+
+% ==========================================
+% CONNECT TO ARDUINO
+% ==========================================
+if mode == 2
+
+    ports = serialportlist;
+
+    fprintf('\nAvailable COM Ports:\n');
+    disp(ports);
+
+    comPort = input('Enter COM port (example "COM5"): ','s');
+
+    baudRate = 9600;
+    s = serialport(comPort, baudRate);
+
+    pause(2);
+
+    fprintf('Connected to %s\n', comPort);
+
+else
+
+    fprintf('\nRunning Simulation Only Mode\n');
+
+end
+
+% ==========================================
+% PICK AND PLACE POSITIONS
+% [Servo1 Servo2 Servo3 Servo4]
+% ==========================================
+Positions = [
+
+     0    0    0     5;
+     0    0    0    90;
+     0   90   45    90;
+     0   90   45     0;
+     0   30   45     0;
+    45   90   45     0;
+    45   90   45    90;
+     0    0    0     0
+
+];
+
+% ==========================================
+% CREATE FIGURE
+% ==========================================
+figure(1);
+clf;
+
+robot.plot([0 0 0], ...
+    'workspace',[-350 350 -350 350 -50 400], ...
+    'trail','r-');
+
+title('Spartan Robokit Simulation');
+
+% ==========================================
+% DISPLAY PANEL
+% ==========================================
+infoText = text(-320,300,350,...
+    sprintf(['X = 0 mm\n' ...
+             'Y = 0 mm\n' ...
+             'Z = 0 mm\n\n' ...
+             'Theta1 = 0 deg\n' ...
+             'Theta2 = 0 deg\n' ...
+             'Theta3 = 0 deg']),...
+    'FontSize',12,...
+    'FontWeight','bold');
+
+drawnow;
+
+% ==========================================
+% START SEQUENCE
+% ==========================================
+fprintf('\nSTARTING SEQUENCE\n');
+fprintf('---------------------------\n');
+
+nSteps = 50;
+
+for i = 1:size(Positions,1)-1
+
+    startPos = Positions(i,1:3);
+    endPos   = Positions(i+1,1:3);
+
+    q_start = deg2rad(startPos);
+    q_end   = deg2rad(endPos);
+
+    % ======================================
+    % SMOOTH TRAJECTORY
+    % ======================================
+    q_traj = jtraj(q_start,q_end,nSteps);
+
+    % ======================================
+    % ANIMATE MOTION
+    % ======================================
+    for j = 1:nSteps
+
+        q = q_traj(j,:);
+
+        robot.animate(q);
+
+        % Forward Kinematics
+        T = robot.fkine(q);
+
+        x = T.t(1);
+        y = T.t(2);
+        z = T.t(3);
+
+        theta1 = rad2deg(q(1));
+        theta2 = rad2deg(q(2));
+        theta3 = rad2deg(q(3));
+
+        % Update display
+        set(infoText,'String',sprintf([ ...
+            'X = %.1f mm\n' ...
+            'Y = %.1f mm\n' ...
+            'Z = %.1f mm\n\n' ...
+            'Theta1 = %.1f deg\n' ...
+            'Theta2 = %.1f deg\n' ...
+            'Theta3 = %.1f deg'], ...
+            x,y,z,...
+            theta1,theta2,theta3));
+
+        drawnow;
+
+        pause(0.02);
+
+    end
+
+    % ======================================
+    % SEND TO ARDUINO
+    % ======================================
+    servo1 = Positions(i+1,1);
+    servo2 = Positions(i+1,2);
+    servo3 = Positions(i+1,3);
+    servo4 = Positions(i+1,4);
+
+    if mode == 2
+
+        cmd = sprintf('%d %d %d %d\n', ...
+            servo1,servo2,servo3,servo4);
+
+        write(s,cmd,"string");
+
+        fprintf(['Sent P%d -> ' ...
+                 'S1:%d S2:%d S3:%d S4:%d\n'], ...
+                 i+1,...
+                 servo1,...
+                 servo2,...
+                 servo3,...
+                 servo4);
+
+        pause(3);
+
+    else
+
+        fprintf(['Simulated P%d -> ' ...
+                 'S1:%d S2:%d S3:%d S4:%d\n'], ...
+                 i+1,...
+                 servo1,...
+                 servo2,...
+                 servo3,...
+                 servo4);
+
+        pause(0.5);
+
+    end
+
+end
+
+fprintf('---------------------------\n');
+fprintf('SEQUENCE COMPLETE\n');
+
+% ==========================================
+% FINAL POSITION
+% ==========================================
+Tfinal = robot.fkine(q_end);
+
+fprintf('\nFINAL END EFFECTOR POSITION\n');
+fprintf('X = %.2f mm\n',Tfinal.t(1));
+fprintf('Y = %.2f mm\n',Tfinal.t(2));
+fprintf('Z = %.2f mm\n',Tfinal.t(3));
+
+fprintf('\nFINAL JOINT ANGLES\n');
+fprintf('Theta1 = %.2f deg\n',rad2deg(q_end(1)));
+fprintf('Theta2 = %.2f deg\n',rad2deg(q_end(2)));
+fprintf('Theta3 = %.2f deg\n',rad2deg(q_end(3)));
+
+% ==========================================
+% CLEAN UP
+% ==========================================
+if mode == 2
+    clear s;
+end
