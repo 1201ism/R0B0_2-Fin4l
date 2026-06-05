@@ -1,0 +1,158 @@
+#include <Servo.h>
+
+// =====================================
+// SERVO OBJECTS
+// =====================================
+Servo servo1;
+Servo servo2;
+Servo servo3;
+Servo servo4;
+
+// =====================================
+// CURRENT POSITIONS
+// =====================================
+int pos1 = 0;
+int pos2 = 0;
+int pos3 = 0;
+int pos4 = 0;
+
+// =====================================
+// MOTION SETTINGS
+// =====================================
+const int STEP_DELAY = 15;   // ms per degree
+const int GRIPPER_MAX = 90;
+
+// =====================================
+// SYNCHRONIZED SMOOTH MOVE
+// ALL SERVOS MOVE TOGETHER
+// =====================================
+void smoothMoveAll(int target1,
+                   int target2,
+                   int target3,
+                   int target4)
+{
+    // ---------------------------------
+    // Calculate movement distances
+    // ---------------------------------
+    int d1 = abs(target1 - pos1);
+    int d2 = abs(target2 - pos2);
+    int d3 = abs(target3 - pos3);
+    int d4 = abs(target4 - pos4);
+
+    // Largest movement determines speed
+    int maxSteps = max(max(d1, d2), max(d3, d4));
+
+    // No movement needed
+    if (maxSteps == 0)
+        return;
+
+    // ---------------------------------
+    // Floating positions for interpolation
+    // ---------------------------------
+    float current1 = pos1;
+    float current2 = pos2;
+    float current3 = pos3;
+    float current4 = pos4;
+
+    // Step increments
+    float step1 = (target1 - pos1) / (float)maxSteps;
+    float step2 = (target2 - pos2) / (float)maxSteps;
+    float step3 = (target3 - pos3) / (float)maxSteps;
+    float step4 = (target4 - pos4) / (float)maxSteps;
+
+    // =================================
+    // SMOOTH SYNCHRONIZED MOTION LOOP
+    // =================================
+    for (int i = 0; i <= maxSteps; i++)
+    {
+        current1 += step1;
+        current2 += step2;
+        current3 += step3;
+        current4 += step4;
+
+        servo1.write(round(current1));
+        servo2.write(round(current2));
+        servo3.write(round(current3));
+        servo4.write(round(current4));
+
+        delay(STEP_DELAY);
+    }
+
+    // Save final positions
+    pos1 = target1;
+    pos2 = target2;
+    pos3 = target3;
+    pos4 = target4;
+}
+
+// =====================================
+// SETUP
+// =====================================
+void setup()
+{
+    Serial.begin(9600);
+
+    // Attach servos
+    servo1.attach(A0);
+    servo2.attach(A1);
+    servo3.attach(A2);
+    servo4.attach(A4);
+
+    // Initial positions
+    servo1.write(pos1);
+    servo2.write(pos2);
+    servo3.write(pos3);
+    servo4.write(pos4);
+
+    delay(1000);
+
+    Serial.println("Robot Ready");
+}
+
+// =====================================
+// LOOP
+// =====================================
+void loop()
+{
+    if (Serial.available() > 0)
+    {
+        int newPos1 = Serial.parseInt();
+        int newPos2 = Serial.parseInt();
+        int newPos3 = Serial.parseInt();
+        int newPos4 = Serial.parseInt();
+
+        // Wait for newline
+        if (Serial.read() == '\n')
+        {
+            // =============================
+            // SAFETY LIMITS
+            // =============================
+            newPos1 = constrain(newPos1, 0, 180);
+            newPos2 = constrain(newPos2, 0, 180);
+            newPos3 = constrain(newPos3, 0, 180);
+            newPos4 = constrain(newPos4, 0, GRIPPER_MAX);
+
+            // =============================
+            // SYNCHRONIZED MOTION
+            // =============================
+            smoothMoveAll(
+                newPos1,
+                newPos2,
+                newPos3,
+                newPos4
+            );
+
+            // =============================
+            // DEBUG OUTPUT
+            // =============================
+            Serial.print("Moved To: ");
+            Serial.print(newPos1);
+            Serial.print(" ");
+            Serial.print(newPos2);
+            Serial.print(" ");
+            Serial.print(newPos3);
+            Serial.print(" ");
+            Serial.println(newPos4);
+        }
+    }
+}
